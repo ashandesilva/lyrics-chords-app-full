@@ -1,5 +1,3 @@
-version: '3.9'
-
 services:
 
   # ─── PostgreSQL ────────────────────────────────────────────────────────────
@@ -49,7 +47,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: password
       SPRING_REDIS_HOST: redis
       SPRING_REDIS_PORT: 6379
-      JWT_SECRET: super-secret-key-change-in-production
+      JWT_SECRET: super-secret-key-change-in-production-must-be-at-least-64-chars-long!!
       JWT_EXPIRATION_MS: 900000
       JWT_REFRESH_EXPIRATION_MS: 604800000
     depends_on:
@@ -57,6 +55,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
 
   # ─── React Frontend ────────────────────────────────────────────────────────
   frontend:
@@ -68,7 +72,8 @@ services:
     ports:
       - "3000:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   postgres_data:

@@ -1,34 +1,74 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-
-const SAMPLE_SONGS = [
-  { id: 1, title: 'Hotel California', artist: 'Eagles', key: 'Bm', chords: 'Bm F# A E G D Em F#' },
-  { id: 2, title: 'Wonderwall',       artist: 'Oasis',  key: 'Em', chords: 'Em7 G Dsus4 A7sus4' },
-  { id: 3, title: 'Stairway to Heaven', artist: 'Led Zeppelin', key: 'Am', chords: 'Am Am/G Am/F# Fmaj7 G Am' },
-  { id: 4, title: 'Smells Like Teen Spirit', artist: 'Nirvana', key: 'Fm', chords: 'F5 Bb5 Ab5 Db5' },
-  { id: 5, title: 'Blackbird',        artist: 'The Beatles', key: 'G', chords: 'G Am7 G/B G' },
-  { id: 6, title: 'Wish You Were Here', artist: 'Pink Floyd', key: 'Em', chords: 'Em G Em G Em A Em A G' },
-];
+import { Link } from 'react-router-dom';
+import api from '../api/client';
 
 export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [search, setSearch]         = useState('');
+  const [songs, setSongs]             = useState([]);
   const [selected, setSelected]     = useState(null);
-  const navigate = useNavigate();
+  const [detail, setDetail]         = useState(null);
+  const [loading, setLoading]       = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [error, setError]           = useState('');
 
   useEffect(() => {
     setIsLoggedIn(!!localStorage.getItem('token'));
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError('');
+
+    api.get('/api/songs', { params: search ? { search } : {} })
+      .then(res => {
+        if (!cancelled) setSongs(res.data);
+      })
+      .catch(() => {
+        if (!cancelled) setError('Could not load songs. Is the backend running?');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [search]);
+
+  useEffect(() => {
+    if (!selected || !isLoggedIn) {
+      setDetail(null);
+      return;
+    }
+
+    let cancelled = false;
+    setDetailLoading(true);
+
+    api.get(`/api/songs/${selected.id}`)
+      .then(res => {
+        if (!cancelled) setDetail(res.data);
+      })
+      .catch(() => {
+        if (!cancelled) setDetail(null);
+      })
+      .finally(() => {
+        if (!cancelled) setDetailLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [selected, isLoggedIn]);
+
   const logout = () => {
     localStorage.removeItem('token');
     setIsLoggedIn(false);
+    setDetail(null);
   };
 
-  const filtered = SAMPLE_SONGS.filter(s =>
-    s.title.toLowerCase().includes(search.toLowerCase()) ||
-    s.artist.toLowerCase().includes(search.toLowerCase())
-  );
+  const handleSelect = (song) => {
+    setSelected(prev => (prev?.id === song.id ? null : song));
+  };
+
+  const firstChord = (chords) => (chords ? chords.split(' ')[0] : '—');
 
   return (
     <div className="min-h-screen" style={{ background: 'radial-gradient(ellipse at 30% 0%, rgba(124,58,237,0.12) 0%, #0f0f14 55%)' }}>
@@ -95,12 +135,22 @@ export default function Home() {
         </div>
 
         {/* ── Song Grid ── */}
+        {error && (
+          <div className="mb-6 px-4 py-3 rounded-lg text-sm text-red-300 text-center"
+               style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <p className="text-center text-slate-500 mb-10">Loading songs…</p>
+        ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-10">
-          {filtered.map((song, i) => (
+          {songs.map((song, i) => (
             <button
               key={song.id}
               id={`song-card-${song.id}`}
-              onClick={() => setSelected(selected?.id === song.id ? null : song)}
+              onClick={() => handleSelect(song)}
               className="card p-5 text-left"
               style={{ animationDelay: `${i * 0.05}s` }}
             >
@@ -111,15 +161,20 @@ export default function Home() {
                   🎵
                 </div>
                 <span className="text-xs text-violet-400 font-mono bg-violet-900/20 px-2 py-1 rounded-md">
-                  Key: {song.key}
+                  Key: {firstChord(song.chords)}
                 </span>
               </div>
               <h3 className="font-semibold text-slate-100 text-base mb-1 leading-snug">{song.title}</h3>
-              <p className="text-sm text-slate-500 mb-3">{song.artist}</p>
+              <p className="text-sm text-slate-500 mb-3">{song.artistName}</p>
               <p className="text-xs text-violet-300 font-mono opacity-70 truncate">{song.chords}</p>
             </button>
           ))}
         </div>
+        )}
+
+        {!loading && songs.length === 0 && !error && (
+          <p className="text-center text-slate-500 mb-10">No songs match your search.</p>
+        )}
 
         {/* ── Song Detail Panel ── */}
         {selected && (
@@ -128,7 +183,7 @@ export default function Home() {
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-slate-100">{selected.title}</h2>
-                <p className="text-violet-400">{selected.artist}</p>
+                <p className="text-violet-400">{selected.artistName}</p>
               </div>
               <button onClick={() => setSelected(null)}
                       className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-300 hover:bg-white/10 transition-all">
@@ -147,11 +202,20 @@ export default function Home() {
               </div>
             </div>
             <div className="rounded-xl p-5" style={{ background: 'rgba(0,0,0,0.3)' }}>
-              <p className="text-xs uppercase tracking-wider text-slate-600 mb-3">Lyrics preview</p>
-              <p className="text-slate-400 text-sm leading-relaxed italic">
-                Full lyrics are stored in the database and loaded via the Spring Boot API.<br/>
-                Sign in to access the complete song with auto-scroll and save to your playlists.
-              </p>
+              <p className="text-xs uppercase tracking-wider text-slate-600 mb-3">Lyrics</p>
+              {isLoggedIn ? (
+                detailLoading ? (
+                  <p className="text-slate-500 text-sm">Loading lyrics…</p>
+                ) : detail ? (
+                  <pre className="text-slate-300 text-sm leading-relaxed whitespace-pre-wrap font-sans">{detail.lyrics}</pre>
+                ) : (
+                  <p className="text-slate-500 text-sm">Could not load lyrics.</p>
+                )
+              ) : (
+                <p className="text-slate-400 text-sm leading-relaxed italic">
+                  Sign in to view full lyrics and save songs to your favorites.
+                </p>
+              )}
             </div>
             {!isLoggedIn && (
               <div className="mt-4 flex gap-3">
@@ -169,9 +233,9 @@ export default function Home() {
         {/* ── Stats row ── */}
         <div className="grid grid-cols-3 gap-4 mt-12">
           {[
-            { label: 'Songs', value: '500+', icon: '🎵' },
-            { label: 'Artists', value: '120+', icon: '🎤' },
-            { label: 'Users',   value: '2K+',  icon: '👥' },
+            { label: 'Songs', value: loading ? '…' : String(songs.length), icon: '🎵' },
+            { label: 'Artists', value: loading ? '…' : String(new Set(songs.map(s => s.artistName)).size), icon: '🎤' },
+            { label: 'Signed in', value: isLoggedIn ? 'Yes' : 'No', icon: '👤' },
           ].map(stat => (
             <div key={stat.label} className="card p-5 text-center">
               <div className="text-2xl mb-1">{stat.icon}</div>

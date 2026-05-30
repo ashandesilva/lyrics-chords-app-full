@@ -7,10 +7,11 @@ Built with a **Spring Boot** REST API backend and a **React + Vite** frontend, o
 
 ## 🚀 Features
 - 🔐 JWT Authentication (login & registration)
-- 🎵 Song & Artist browsing with lyrics/chords
-- ❤️ Favorites & Playlists per user
-- 🛡️ Admin Panel (add/edit songs & artists)
-- 📜 Auto-scroll Lyrics View
+- 🎵 Song browsing with chords (loaded from PostgreSQL via REST API)
+- 📜 Full lyrics for signed-in users
+- 🛡️ Admin user seeded on first run
+- ❤️ Favorites & Playlists *(data model ready; API coming soon)*
+- 📜 Auto-scroll Lyrics View *(planned)*
 
 ---
 
@@ -21,7 +22,7 @@ Built with a **Spring Boot** REST API backend and a **React + Vite** frontend, o
 | Frontend | React 18, Vite 5, TailwindCSS 3, Axios, React Router v6 |
 | Backend | Java 21, Spring Boot 3.2, Spring Security, Spring Data JPA |
 | Database | PostgreSQL 16 |
-| Cache | Redis 7 |
+| Cache | Redis 7 *(included in Docker; reserved for future caching)* |
 | Auth | JWT (JJWT 0.9.1) |
 | DevOps | Docker, Docker Compose, Nginx |
 
@@ -44,6 +45,7 @@ lyrics-chords-app-full/
     ├── Dockerfile
     ├── nginx.conf              # Serves SPA + proxies /api/ to backend
     └── src/
+        ├── api/client.js       # Axios instance with JWT interceptor
         ├── App.jsx
         ├── main.jsx
         └── pages/
@@ -68,6 +70,8 @@ docker compose up --build
 ```
 
 > ⏱️ First build takes ~5–8 minutes (downloads Maven deps + npm packages). Subsequent builds are fast.
+
+The frontend waits for the backend health check (`GET /api/health`) before starting.
 
 ### 3. Access the app
 
@@ -95,10 +99,9 @@ docker compose down -v       # stop + delete database volume (fresh start)
 3. Run backend:
    ```bash
    cd backend
-   ./mvnw spring-boot:run        # Linux/macOS
-   .\mvnw.cmd spring-boot:run    # Windows
+   mvn spring-boot:run
    ```
-4. Run frontend:
+4. Run frontend (Vite proxies `/api` to `http://localhost:8080`):
    ```bash
    cd frontend
    npm install
@@ -121,8 +124,34 @@ docker compose down -v       # stop + delete database volume (fresh start)
 ---
 
 ## 🔌 API Overview
+
 | Method | Endpoint | Auth Required | Description |
 |---|---|---|---|
-| `POST` | `/api/auth/register` | No | Create new account |
-| `POST` | `/api/auth/login` | No | Login, returns JWT |
-| All others | `/api/**` | Yes (`Bearer <token>`) | Protected routes |
+| `GET` | `/api/health` | No | Health check for Docker / load balancers |
+| `POST` | `/api/auth/register` | No | Create new account; returns JWT |
+| `POST` | `/api/auth/login` | No | Login; returns JWT |
+| `GET` | `/api/songs` | No | List songs (optional `?search=` query) |
+| `GET` | `/api/songs/{id}` | Yes (`Bearer <token>`) | Full song with lyrics |
+
+Error responses return JSON: `{ "message": "..." }` with an appropriate HTTP status code.
+
+---
+
+## 🔧 Configuration
+
+Environment variables (set in `docker-compose.yml` or your shell):
+
+| Variable | Default | Description |
+|---|---|---|
+| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5432/chordsdb` | PostgreSQL JDBC URL |
+| `JWT_SECRET` | *(see application.properties)* | HS512 signing key — **must be ≥ 64 characters** |
+| `JWT_EXPIRATION_MS` | `900000` | Access token lifetime (15 min) |
+
+---
+
+## 📝 Known Limitations / Roadmap
+
+- Favorites and admin CRUD endpoints are not yet exposed (JPA models exist)
+- Redis is wired in Docker but not used by application code yet
+- JWT refresh tokens are configured but not implemented
+- Consider upgrading JJWT to 0.12.x for Java 21 compatibility long-term
